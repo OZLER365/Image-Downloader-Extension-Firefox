@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Image Downloader</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <div id="controls">
+      <div class="input-group">
+        <label for="folderName">Subfolder</label>
+        <input id="folderName" type="text" placeholder="e.g. MyVacation" autocomplete="off">
+      </div>
+      <button id="renameToggle" class="btn secondary toggle-btn" title="Toggle between renamed and original filenames">
+        Rename
+      </button>
+      <button id="sortBtn" class="btn secondary" title="Sort by Size">Sort ⇅</button>
+    </div>
+    
+    <div id="size-filters">
+      <div class="filter-group">
+        <div class="filter-label-row">
+            <label>Width</label>
+            <div class="manual-inputs">
+                <input type="checkbox" id="widthCheckMin" class="dim-check" title="Filter Min Width">
+                <input type="number" id="widthInputMin" class="tiny-input" min="0" value="50">
+                <span>-</span>
+                <input type="number" id="widthInputMax" class="tiny-input" min="0" value="3000">
+                <input type="checkbox" id="widthCheckMax" class="dim-check" title="Filter Max Width">
+                <span>px</span>
+            </div>
+        </div>
+        <div class="range-wrapper">
+            <div class="range-track-bg"></div>
+            <div id="widthTrack" class="range-track-active"></div>
+            <input type="range" id="widthSliderMin" min="50" max="3000" value="50" step="10">
+            <input type="range" id="widthSliderMax" min="50" max="3000" value="3000" step="10">
+        </div>
+      </div>
+      <div class="filter-group">
+        <div class="filter-label-row">
+            <label>Height</label>
+            <div class="manual-inputs">
+                <input type="checkbox" id="heightCheckMin" class="dim-check" title="Filter Min Height">
+                <input type="number" id="heightInputMin" class="tiny-input" min="0" value="50">
+                <span>-</span>
+                <input type="number" id="heightInputMax" class="tiny-input" min="0" value="3000">
+                <input type="checkbox" id="heightCheckMax" class="dim-check" title="Filter Max Height">
+                <span>px</span>
+            </div>
+        </div>
+        <div class="range-wrapper">
+            <div class="range-track-bg"></div>
+            <div id="heightTrack" class="range-track-active"></div>
+            <input type="range" id="heightSliderMin" min="50" max="3000" value="50" step="10">
+            <input type="range" id="heightSliderMax" min="50" max="3000" value="3000" step="10">
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div id="grid-container">
+    <div id="grid">
+      </div>
+  </div>
+
+  <footer>
+    <div id="status-bar">
+      <div id="tracker-pill">0 selected</div>
+      <span id="status">Ready</span>
+      <button id="clearCache" class="btn-icon" title="Clear cached images">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M2 4h12M5.5 4V3a1 1 0 011-1h3a1 1 0 011 1v1m2 0v9a1 1 0 01-1 1h-8a1 1 0 01-1-1V4h10z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+
+    <div id="actions">
+      <button id="toggleSelect" class="btn secondary">Select All</button>
+      <button id="networkToggle" class="btn secondary network-btn" title="Toggle Network Mode">Default</button>
+      <button id="zip" class="btn secondary" title="Download ZIP">ZIP</button>
+      <button id="download" class="btn primary">Download</button>
+    </div>
+  </footer>
+
+  <script src="jszip.min.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
