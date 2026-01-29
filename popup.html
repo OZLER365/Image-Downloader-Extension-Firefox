@@ -12,10 +12,14 @@
         <label for="folderName">Subfolder</label>
         <input id="folderName" type="text" placeholder="e.g. MyVacation" autocomplete="off">
       </div>
-      <button id="renameToggle" class="btn secondary toggle-btn" title="Toggle between renamed and original filenames">
-        Rename
-      </button>
+      <button id="renameToggle" class="btn secondary toggle-btn" title="Toggle between renamed and original filenames">Rename</button>
       <button id="sortBtn" class="btn secondary" title="Sort by Size">Sort ⇅</button>
+      <button id="settingsBtn" class="btn secondary icon-btn" title="Settings">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="8" cy="8" r="2"/>
+          <path d="M13 8a5 5 0 01-1.5 3.5M3 8a5 5 0 011.5-3.5M8 3v0M8 13v0M11.5 4.5v0M4.5 11.5v0M13 8h0M3 8h0M11.5 11.5v0M4.5 4.5v0" stroke-linecap="round"/>
+        </svg>
+      </button>
     </div>
     
     <div id="size-filters">
@@ -60,9 +64,23 @@
     </div>
   </header>
 
-  <div id="grid-container">
-    <div id="grid">
+  <div id="settings-panel" class="hidden">
+    <div class="settings-header">
+      <h3>Settings & Support</h3>
+      <button id="closeSettings" class="btn-close">✕</button>
+    </div>
+    <div class="settings-content">
+      <div class="qr-section">
+        <img src="bmc_qr.png" alt="Support QR Code" class="qr-code" id="qrCode">
+        <p class="support-text">Help Keep This Extension<br>Updated and Running Smoothly<br>With a Small Donation</p>
+        <p class="donation-link"><a href="https://buymeacoffee.com/ozler" target="_blank">buymeacoffee.com/ozler</a></p>
+        <p class="contact-text">For Queries or Feature Requests<br>Review on Firefox Store or Email:<br><a href="mailto:devjk6918@gmail.com">devjk6918@gmail.com</a></p>
       </div>
+    </div>
+  </div>
+
+  <div id="grid-container">
+    <div id="grid"></div>
   </div>
 
   <footer>
