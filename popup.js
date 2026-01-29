@@ -46,7 +46,11 @@ const dom = {
     widthCheckMin: document.getElementById("widthCheckMin"),
     widthCheckMax: document.getElementById("widthCheckMax"),
     heightCheckMin: document.getElementById("heightCheckMin"),
-    heightCheckMax: document.getElementById("heightCheckMax")
+    heightCheckMax: document.getElementById("heightCheckMax"),
+    settingsBtn: document.getElementById("settingsBtn"),
+    settingsPanel: document.getElementById("settings-panel"),
+    closeSettings: document.getElementById("closeSettings"),
+    qrCode: document.getElementById("qrCode")
 };
 
 function updateInputStates() {
@@ -261,6 +265,14 @@ function processRenderQueue() {
             }
             imgEl.classList.add('loaded');
             if (w) img.pixelCount = w * h;
+            
+            // Add dimension display
+            if (w > 0 && h > 0) {
+                const dimLabel = document.createElement('div');
+                dimLabel.className = 'dim-label';
+                dimLabel.textContent = `${w}x${h}`;
+                item.appendChild(dimLabel);
+            }
         };
         imgEl.onerror = () => fetchQueue.push(() => handleImageError(img, item, imgEl));
         item.appendChild(imgEl);
@@ -637,3 +649,17 @@ function dataURItoBlob(dataURI) {
 }
 
 updateNetworkModeUI();
+
+// Settings Panel Event Listeners
+dom.settingsBtn.onclick = () => {
+    dom.settingsPanel.classList.remove('hidden');
+};
+
+dom.closeSettings.onclick = () => {
+    dom.settingsPanel.classList.add('hidden');
+};
+
+dom.qrCode.onclick = () => {
+    browser.tabs.create({ url: "https://buymeacoffee.com/ozler" });
+};
+
