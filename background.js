@@ -15,6 +15,13 @@ const CDN_WHITELIST = new Set([
     'unsplash.com', 'pexels.com', 'giphy.com', 'tenor.com'
 ]);
 
+// Open donation page on install
+browser.runtime.onInstalled.addListener((details) => {
+    if (details.reason === "install") {
+        browser.tabs.create({ url: "https://buymeacoffee.com/ozler" });
+    }
+});
+
 browser.tabs.onRemoved.addListener((tabId) => {
     networkImageCache.delete(tabId);
     tabUrls.delete(tabId);
