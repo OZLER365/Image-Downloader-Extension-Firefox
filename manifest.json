@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Universal Image Downloader",
-  "version": "15.2",
+  "version": "15.7",
   "permissions": [
     "activeTab",
     "tabs",
@@ -48,7 +48,7 @@
       "js": [
         "content.js"
       ],
-      "run_at": "document_end",
+      "run_at": "document_start",
       "all_frames": false
     }
   ]
