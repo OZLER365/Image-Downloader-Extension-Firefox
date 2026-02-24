@@ -40,7 +40,9 @@ const dom = {
     settingsBtn: document.getElementById("settingsBtn"),
     settingsPanel: document.getElementById("settings-panel"),
     closeSettings: document.getElementById("closeSettings"),
-    qrCode: document.getElementById("qrCode")
+    modeDefault: document.getElementById("modeDefault"),
+    modeNetwork: document.getElementById("modeNetwork"),
+    modeBlob: document.getElementById("modeBlob")
 };
 
 const idleCallback = window.requestIdleCallback || ((cb) => setTimeout(cb, 1));
@@ -80,6 +82,7 @@ function saveState(immediate = false) {
     const doSave = () => {
         if (!currentTabId) return;
         idleCallback(() => {
+            // Optimization: Avoid serializing heavy data if not needed, but we must preserve state.
             browser.runtime.sendMessage({
                 type: "SAVE_STATE", tabId: currentTabId,
                 state: { images, pageTitle, scrollPosition: dom.gridContainer.scrollTop, networkMode: fetchMode, tabUrl: currentTabUrl }
@@ -405,11 +408,11 @@ async function init() {
 
         try {
             const saved = await browser.runtime.sendMessage({ type: "GET_STATE", tabId: currentTabId });
+            if (saved?.state?.networkMode !== undefined) { fetchMode = saved.state.networkMode; updateNetworkModeUI(); await setNetworkMode(fetchMode); }
             const urlChanged = saved?.state?.tabUrl && saved.state.tabUrl !== currentTabUrl;
             if (urlChanged) {
                 clearAllCache(); await browser.runtime.sendMessage({ type: "CLEAR_TAB_STATE", tabId: currentTabId });
             } else if (saved?.state) {
-                if (saved.state.networkMode !== undefined) { fetchMode = saved.state.networkMode; updateNetworkModeUI(); await setNetworkMode(fetchMode); }
                 if (saved.state.images?.length && !urlChanged) {
                     images = saved.state.images;
                     let maxUid = 0;
@@ -464,14 +467,21 @@ function updateUI(shouldSave = true) {
 
 function updateNetworkModeUI() {
     dom.networkToggle.classList.remove('network-active', 'blob-active');
+    dom.modeDefault.checked = false;
+    dom.modeNetwork.checked = false;
+    dom.modeBlob.checked = false;
+    
     if (fetchMode === 'network') {
         dom.networkToggle.textContent = "Network";
         dom.networkToggle.classList.add('network-active');
+        dom.modeNetwork.checked = true;
     } else if (fetchMode === 'blob') {
-        dom.networkToggle.textContent = "Blob+";
+        dom.networkToggle.textContent = "Scrapper";
         dom.networkToggle.classList.add('blob-active');
+        dom.modeBlob.checked = true;
     } else {
         dom.networkToggle.textContent = "Default";
+        dom.modeDefault.checked = true;
     }
 }
 
@@ -498,20 +508,23 @@ dom.renameToggle.onclick = () => {
     renameMode = !renameMode; dom.renameToggle.textContent = renameMode ? "Rename" : "Original"; dom.renameToggle.classList.toggle('original-mode', !renameMode);
 };
 
-dom.networkToggle.onclick = async () => {
+async function switchMode(newMode) {
+    if (fetchMode === newMode) return;
     images = []; 
     uidCounter = 0; 
     unscrambleTotal = 0; 
     unscrambleDone = 0;
     render();
-    if (fetchMode === 'default' || fetchMode === false) fetchMode = 'network';
-    else if (fetchMode === 'network') fetchMode = 'blob';
-    else fetchMode = 'default';
+    fetchMode = newMode;
     updateNetworkModeUI();
     await setNetworkMode(fetchMode);
     saveState(true); 
     await init();
-};
+}
+
+dom.modeDefault.onclick = () => switchMode('default');
+dom.modeNetwork.onclick = () => switchMode('network');
+dom.modeBlob.onclick = () => switchMode('blob');
 
 dom.refreshBtn.onclick = async () => {
     clearAllCache();
@@ -522,20 +535,13 @@ dom.refreshBtn.onclick = async () => {
 };
 
 dom.sortBtn.onclick = () => {
-    if (!sortOrder) { sortOrder = 'type'; dom.sortBtn.textContent = "Type"; }
-    else if (sortOrder === 'type') { sortOrder = 'name'; dom.sortBtn.textContent = "Name"; }
+    if (!sortOrder) { sortOrder = 'name'; dom.sortBtn.textContent = "Name"; }
     else if (sortOrder === 'name') { sortOrder = 'asc'; dom.sortBtn.textContent = "Asc ↓"; }
     else if (sortOrder === 'asc') { sortOrder = 'desc'; dom.sortBtn.textContent = "Dsc ↑"; }
     else { sortOrder = null; dom.sortBtn.textContent = "Sort ⇅"; }
     
     setTimeout(() => {
-        if (sortOrder === 'type') {
-            images.sort((a,b) => {
-                const cmp = a._ext.localeCompare(b._ext);
-                return cmp !== 0 ? cmp : (a.sortOrder||0)-(b.sortOrder||0);
-            });
-        }
-        else if (sortOrder === 'name') {
+        if (sortOrder === 'name') {
             images.sort((a,b) => {
                 const getBase = (n) => { const d = n.lastIndexOf('.'); return d !== -1 ? n.substring(0, d) : n; };
                 const nameA = a._name, nameB = b._name;
@@ -545,8 +551,18 @@ dom.sortBtn.onclick = () => {
                 return nameA.localeCompare(nameB);
             });
         }
-        else if (sortOrder === 'asc') images.sort((a,b) => (a.pixelCount||0) - (b.pixelCount||0));
-        else if (sortOrder === 'desc') images.sort((a,b) => (b.pixelCount||0) - (a.pixelCount||0));
+        else if (sortOrder === 'asc') {
+            images.sort((a,b) => {
+                const diff = (a.pixelCount||0) - (b.pixelCount||0);
+                return diff !== 0 ? diff : (a.sortOrder||0) - (b.sortOrder||0);
+            });
+        }
+        else if (sortOrder === 'desc') {
+            images.sort((a,b) => {
+                const diff = (b.pixelCount||0) - (a.pixelCount||0);
+                return diff !== 0 ? diff : (a.sortOrder||0) - (b.sortOrder||0);
+            });
+        }
         else images.sort((a,b) => (a.sortOrder||0) - (b.sortOrder||0));
         performSort();
     }, 10);
@@ -710,4 +726,3 @@ function dataURItoBlob(dataURI) {
 updateNetworkModeUI();
 dom.settingsBtn.onclick = () => dom.settingsPanel.classList.remove('hidden');
 dom.closeSettings.onclick = () => dom.settingsPanel.classList.add('hidden');
-dom.qrCode.onclick = () => browser.tabs.create({ url: "https://buymeacoffee.com/ozler" });
