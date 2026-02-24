@@ -32,10 +32,21 @@ header { min-height:50px; padding:8px 10px; background:var(--bg-color); border-b
 .settings-header h3 { margin:0; font-size:16px; font-weight:600; }
 .btn-close { background:transparent; border:none; font-size:24px; color:var(--text-muted); cursor:pointer; width:32px; height:32px; display:flex; align-items:center; justify-content:center; }
 .settings-content { flex:1; overflow-y:auto; padding:20px 16px; }
-.qr-section { display:flex; flex-direction:column; align-items:center; text-align:center; gap:16px; }
-.qr-code { width:200px; height:200px; border:2px solid var(--border); border-radius:var(--radius); }
-.support-text, .donation-link, .contact-text { font-size:13px; line-height:1.6; margin:0; }
-.donation-link a, .contact-text a { color:var(--primary); text-decoration:none; font-weight:500; }
+.mode-section { margin-bottom:32px; padding-bottom:24px; border-bottom:1px solid var(--border); }
+.section-title { margin:0 0 16px 0; font-size:14px; font-weight:600; color:var(--text-main); }
+.mode-options { display:flex; flex-direction:column; gap:12px; }
+.mode-option { display:flex; align-items:center; gap:8px; }
+.mode-check { margin:0; width:12px; height:12px; cursor:pointer; }
+.mode-option label { font-size:13px; color:var(--text-main); cursor:pointer; user-select:none; }
+.support-section { display:flex; flex-direction:column; align-items:center; text-align:center; gap:16px; }
+.support-text, .donation-link, .license-text { font-size:13px; line-height:1.6; margin:0; }
+.donation-link a { color:var(--primary); text-decoration:none; font-weight:500; }
+.contact-links { display:flex; flex-direction:column; gap:10px; width:100%; }
+.contact-link { display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:6px; background:var(--bg-secondary); color:var(--text-main); text-decoration:none; font-size:12px; transition:background 0.2s; }
+.contact-link:hover { background:#e5e7eb; }
+.contact-link svg { flex-shrink:0; }
+.contact-link span { flex:1; text-align:left; }
+.license-text { margin-top:8px; font-size:11px; color:var(--text-muted); }
 #grid-container { flex:1; overflow-y:auto; background:var(--bg-secondary); padding:8px; }
 #grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; padding-bottom:8px; }
 .item { position:relative; aspect-ratio:1; background:#f3f4f6; border-radius:var(--radius); overflow:hidden; cursor:pointer; box-shadow:var(--shadow); border:2px solid transparent; contain:layout paint style; content-visibility:auto; contain-intrinsic-size:100px; }
