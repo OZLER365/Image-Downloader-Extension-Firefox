@@ -3,12 +3,19 @@ const tabUrls = new Map();
 const popupState = new Map(); 
 const refererMap = new Map();
 const imageOrder = new Map();
-const tabNetworkMode = new Map();
+let globalNetworkMode = 'default';
 
 const CDN_WHITELIST = new Set(['pstatic.net','webtoons.com','cloudinary.com','imgur.com','amazonaws.com','cloudfront.net','akamaized.net','fastly.net','cdn','images','img','static','media','assets','photos','googleusercontent.com','gstatic.com','twimg.com','fbcdn.net','pinimg.com','shopify.com','wordpress.com','wixstatic.com','unsplash.com','pexels.com','giphy.com','tenor.com']);
+const COMMON_CDNS = ['pstatic.net','webtoons.com','cloudinary.com','imgur.com','gstatic.com','googleusercontent.com'];
+
+browser.storage.local.get('networkMode', (res) => {
+    if (res && res.networkMode) globalNetworkMode = res.networkMode;
+});
+
+browser.runtime.setUninstallURL("https://ozler365.github.io/ozler-s-works-info/#/issues");
 
 browser.runtime.onInstalled.addListener((details) => {
-    if (details.reason === "install") browser.tabs.create({ url: "https://buymeacoffee.com/ozler" });
+    if (details.reason === "install") browser.tabs.create({ url: "https://ozler365.github.io/ozler-s-works-info/#/home" });
 });
 
 browser.tabs.onRemoved.addListener((tabId) => {
@@ -16,7 +23,6 @@ browser.tabs.onRemoved.addListener((tabId) => {
     tabUrls.delete(tabId);
     popupState.delete(tabId);
     imageOrder.delete(tabId);
-    tabNetworkMode.delete(tabId);
 });
 
 browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
@@ -31,29 +37,32 @@ browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
 function isImageFromCurrentPage(imageUrl, pageUrl, networkMode = false) {
     if (!pageUrl) return networkMode;
     try {
+        const urlLower = imageUrl.toLowerCase();
         if (networkMode) {
-            const urlLower = imageUrl.toLowerCase();
-            if ([...CDN_WHITELIST].some(cdn => urlLower.includes(cdn))) return true;
+            for (const cdn of CDN_WHITELIST) if (urlLower.includes(cdn)) return true;
             if (/\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|avif|jfif)(\?|$)/i.test(imageUrl)) return true;
         } else {
-            const imgOrigin = new URL(imageUrl).origin;
-            const pageOrigin = new URL(pageUrl).origin;
-            if (imgOrigin === pageOrigin) return true;
-            const commonCdns = ['pstatic.net','webtoons.com','cloudinary.com','imgur.com','gstatic.com','googleusercontent.com'];
-            if (commonCdns.some(cdn => imageUrl.toLowerCase().includes(cdn))) return true;
+            if (new URL(imageUrl).origin === new URL(pageUrl).origin) return true;
+            for (const cdn of COMMON_CDNS) if (urlLower.includes(cdn)) return true;
         }
     } catch {}
     return networkMode;
 }
 
 function addImageToCache(tabId, url, mode = 'default') {
-    if (!networkImageCache.has(tabId)) networkImageCache.set(tabId, { default: new Set(), network: new Set(), blob: new Set() });
-    const caches = networkImageCache.get(tabId);
+    let caches = networkImageCache.get(tabId);
+    if (!caches) {
+        caches = { default: new Set(), network: new Set(), blob: new Set() };
+        networkImageCache.set(tabId, caches);
+    }
     const targetSet = caches[mode] || caches.default;
     if (!targetSet.has(url) && targetSet.size < 2000) {
         targetSet.add(url);
-        if (!imageOrder.has(tabId)) imageOrder.set(tabId, new Map());
-        const orderMap = imageOrder.get(tabId);
+        let orderMap = imageOrder.get(tabId);
+        if (!orderMap) {
+            orderMap = new Map();
+            imageOrder.set(tabId, orderMap);
+        }
         if (!orderMap.has(url)) orderMap.set(url, orderMap.size);
     }
 }
@@ -61,18 +70,19 @@ function addImageToCache(tabId, url, mode = 'default') {
 browser.webRequest.onCompleted.addListener(
     (details) => {
         if (details.statusCode !== 200) return;
+        const networkMode = globalNetworkMode;
+        const isNetworkMode = (networkMode === 'network' || networkMode === true);
+        
+        if (!isNetworkMode && details.type !== 'image') return;
+        
         if (details.responseHeaders) {
             const lenHeader = details.responseHeaders.find(h => h.name.toLowerCase() === 'content-length');
-            if (lenHeader) {
-                const size = parseInt(lenHeader.value);
-                if (!isNaN(size) && size < 1024) return;
-            }
+            if (lenHeader && parseInt(lenHeader.value) < 1024) return;
         }
-        const tabsToCheck = details.tabId !== -1 ? [details.tabId] : [...tabUrls.keys()];
-        tabsToCheck.forEach(tId => {
-            const networkMode = tabNetworkMode.get(tId) || 'default';
-            const isNetworkMode = (networkMode === 'network' || networkMode === true);
-            if (!isNetworkMode && details.type !== 'image') return;
+
+        const tabsToCheck = details.tabId !== -1 ? [details.tabId] : Array.from(tabUrls.keys());
+        
+        for (const tId of tabsToCheck) {
             let imageUrl = details.url;
             if (details.type !== 'image') {
                 const typeHeader = details.responseHeaders?.find(h => h.name.toLowerCase() === 'content-type');
@@ -82,10 +92,9 @@ browser.webRequest.onCompleted.addListener(
             }
             const pageUrl = tabUrls.get(tId);
             if (pageUrl && isImageFromCurrentPage(imageUrl, pageUrl, isNetworkMode)) {
-                const targetMode = isNetworkMode ? 'network' : (networkMode === 'blob' ? 'blob' : 'default');
-                addImageToCache(tId, imageUrl, targetMode);
+                addImageToCache(tId, imageUrl, isNetworkMode ? 'network' : (networkMode === 'blob' ? 'blob' : 'default'));
             }
-        });
+        }
     },
     { urls: ["<all_urls>"], types: ["image","xmlhttprequest","other","main_frame","sub_frame","object","media"] },
     ["responseHeaders"]
@@ -93,8 +102,8 @@ browser.webRequest.onCompleted.addListener(
 
 browser.webRequest.onBeforeSendHeaders.addListener(
     (details) => {
-        if (refererMap.has(details.url)) {
-            const referer = refererMap.get(details.url);
+        const referer = refererMap.get(details.url);
+        if (referer) {
             const headers = details.requestHeaders;
             let hasReferer = false;
             for (let i = 0; i < headers.length; i++) {
@@ -116,35 +125,34 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const { type, tabId } = message;
     switch (type) {
         case "GET_NETWORK_IMAGES":
-            const currentMode = tabNetworkMode.get(tabId) || 'default';
-            const reqMode = (currentMode === 'network' || currentMode === true) ? 'network' : (currentMode === 'blob' ? 'blob' : 'default');
+            const reqMode = (globalNetworkMode === 'network' || globalNetworkMode === true) ? 'network' : (globalNetworkMode === 'blob' ? 'blob' : 'default');
             let images = [];
-            if (networkImageCache.has(tabId)) {
-                const caches = networkImageCache.get(tabId);
-                if (caches[reqMode]) images = Array.from(caches[reqMode]);
-            }
-            if (imageOrder.has(tabId)) {
-                const orderMap = imageOrder.get(tabId);
-                images.sort((a, b) => (orderMap.get(a) ?? Infinity) - (orderMap.get(b) ?? Infinity));
-            }
+            const caches = networkImageCache.get(tabId);
+            if (caches && caches[reqMode]) images = Array.from(caches[reqMode]);
+            const orderMap = imageOrder.get(tabId);
+            if (orderMap) images.sort((a, b) => (orderMap.get(a) ?? Infinity) - (orderMap.get(b) ?? Infinity));
             sendResponse({ images });
             break;
         case "SET_NETWORK_MODE":
-            tabNetworkMode.set(tabId, message.networkMode);
+            globalNetworkMode = message.networkMode;
+            browser.storage.local.set({ networkMode: globalNetworkMode });
             sendResponse({ success: true });
             break;
         case "GET_CURRENT_TAB_MODE":
-            sendResponse({ mode: sender.tab ? (tabNetworkMode.get(sender.tab.id) || 'default') : 'default' });
+            sendResponse({ mode: globalNetworkMode });
             break;
         case "SAVE_STATE":
             popupState.set(tabId, message.state);
-            if (message.state?.networkMode !== undefined) tabNetworkMode.set(tabId, message.state.networkMode);
+            if (message.state?.networkMode !== undefined) {
+                 globalNetworkMode = message.state.networkMode;
+                 browser.storage.local.set({ networkMode: globalNetworkMode });
+            }
             if (message.state?.tabUrl) tabUrls.set(tabId, message.state.tabUrl);
             sendResponse({ success: true });
             break;
         case "GET_STATE":
-            let state = popupState.get(tabId);
-            if (!state && tabNetworkMode.has(tabId)) state = { networkMode: tabNetworkMode.get(tabId) };
+            let state = popupState.get(tabId) || {};
+            state.networkMode = globalNetworkMode;
             sendResponse({ state });
             break;
         case "CLEAR_TAB_STATE":
@@ -155,19 +163,17 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
             break;
         case "FETCH_IMAGE_BLOB":
             const { url } = message;
-            const pageUrl = tabUrls.get(tabId);
-            if (pageUrl) refererMap.set(url, pageUrl);
-            fetch(url).then(r => {
-                if (!r.ok) throw new Error();
-                return r.blob();
-            }).then(blob => {
-                if (pageUrl) setTimeout(() => refererMap.delete(url), 2000);
+            const pUrl = tabUrls.get(tabId);
+            if (pUrl) refererMap.set(url, pUrl);
+            fetch(url).then(r => r.ok ? r.blob() : Promise.reject())
+            .then(blob => {
+                if (pUrl) setTimeout(() => refererMap.delete(url), 2000);
                 const reader = new FileReader();
                 reader.onloadend = () => sendResponse({ dataUrl: reader.result });
                 reader.onerror = () => sendResponse({ error: true });
                 reader.readAsDataURL(blob);
             }).catch(() => {
-                if (pageUrl) refererMap.delete(url);
+                if (pUrl) refererMap.delete(url);
                 sendResponse({ error: true });
             });
             return true;
