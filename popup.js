@@ -10,39 +10,22 @@ let renderQueue = [], targetScrollPosition = 0, sortOrder = null, uidCounter = 0
 let unscrambleMap = {}, unscrambleTotal = 0, unscrambleDone = 0;
 
 const dom = {
-    status: document.getElementById("status"),
-    gridContainer: document.getElementById("grid-container"),
-    grid: document.getElementById("grid"),
-    toggleBtn: document.getElementById("toggleSelect"),
-    tracker: document.getElementById("tracker-pill"),
-    folderName: document.getElementById("folderName"),
-    renameToggle: document.getElementById("renameToggle"),
-    networkToggle: document.getElementById("networkToggle"),
-    sortBtn: document.getElementById("sortBtn"),
-    downloadBtn: document.getElementById("download"),
-    zipBtn: document.getElementById("zip"),
-    clearCache: document.getElementById("clearCache"),
-    refreshBtn: document.getElementById("refreshBtn"),
-    widthInputMin: document.getElementById("widthInputMin"),
-    widthInputMax: document.getElementById("widthInputMax"),
-    heightInputMin: document.getElementById("heightInputMin"),
-    heightInputMax: document.getElementById("heightInputMax"),
-    widthSliderMin: document.getElementById("widthSliderMin"),
-    widthSliderMax: document.getElementById("widthSliderMax"),
-    heightSliderMin: document.getElementById("heightSliderMin"),
-    heightSliderMax: document.getElementById("heightSliderMax"),
-    widthTrack: document.getElementById("widthTrack"),
-    heightTrack: document.getElementById("heightTrack"),
-    widthCheckMin: document.getElementById("widthCheckMin"),
-    widthCheckMax: document.getElementById("widthCheckMax"),
-    heightCheckMin: document.getElementById("heightCheckMin"),
-    heightCheckMax: document.getElementById("heightCheckMax"),
-    settingsBtn: document.getElementById("settingsBtn"),
-    settingsPanel: document.getElementById("settings-panel"),
-    closeSettings: document.getElementById("closeSettings"),
-    modeDefault: document.getElementById("modeDefault"),
-    modeNetwork: document.getElementById("modeNetwork"),
-    modeBlob: document.getElementById("modeBlob")
+    status: document.getElementById("status"), gridContainer: document.getElementById("grid-container"),
+    grid: document.getElementById("grid"), toggleBtn: document.getElementById("toggleSelect"),
+    tracker: document.getElementById("tracker-pill"), folderName: document.getElementById("folderName"),
+    renameToggle: document.getElementById("renameToggle"), networkToggle: document.getElementById("networkToggle"),
+    sortBtn: document.getElementById("sortBtn"), downloadBtn: document.getElementById("download"),
+    zipBtn: document.getElementById("zip"), clearCache: document.getElementById("clearCache"),
+    widthInputMin: document.getElementById("widthInputMin"), widthInputMax: document.getElementById("widthInputMax"),
+    heightInputMin: document.getElementById("heightInputMin"), heightInputMax: document.getElementById("heightInputMax"),
+    widthSliderMin: document.getElementById("widthSliderMin"), widthSliderMax: document.getElementById("widthSliderMax"),
+    heightSliderMin: document.getElementById("heightSliderMin"), heightSliderMax: document.getElementById("heightSliderMax"),
+    widthTrack: document.getElementById("widthTrack"), heightTrack: document.getElementById("heightTrack"),
+    widthCheckMin: document.getElementById("widthCheckMin"), widthCheckMax: document.getElementById("widthCheckMax"),
+    heightCheckMin: document.getElementById("heightCheckMin"), heightCheckMax: document.getElementById("heightCheckMax"),
+    settingsBtn: document.getElementById("settingsBtn"), settingsPanel: document.getElementById("settings-panel"),
+    closeSettings: document.getElementById("closeSettings"), modeDefault: document.getElementById("modeDefault"),
+    modeNetwork: document.getElementById("modeNetwork"), modeBlob: document.getElementById("modeBlob")
 };
 
 const idleCallback = window.requestIdleCallback || ((cb) => setTimeout(cb, 1));
@@ -50,25 +33,71 @@ let uiUpdateTimer = null;
 
 function debounceUpdateUI() {
     if (uiUpdateTimer) return;
-    uiUpdateTimer = requestAnimationFrame(() => {
-        updateUI(false);
-        uiUpdateTimer = null;
-    });
+    uiUpdateTimer = requestAnimationFrame(() => { updateUI(false); uiUpdateTimer = null; });
 }
 
 class AsyncQueue {
-    constructor(concurrency) { this.concurrency = concurrency; this.running = 0; this.queue = []; }
-    push(task) { this.queue.push(task); this.next(); }
+    constructor(concurrency) { this.concurrency = concurrency; this.running = 0; this.queue = []; this.onStart = null; this.onEmpty = null; }
+    push(task) { 
+        if (this.running === 0 && this.queue.length === 0 && this.onStart) this.onStart();
+        this.queue.push(task); this.next(); 
+    }
     next() {
         while (this.running < this.concurrency && this.queue.length > 0) {
-            const task = this.queue.shift();
-            this.running++;
-            task().finally(() => { this.running--; this.next(); });
+            const task = this.queue.shift(); this.running++;
+            task().finally(() => { 
+                this.running--; this.next(); 
+                if (this.running === 0 && this.queue.length === 0 && this.onEmpty) this.onEmpty();
+            });
         }
     }
 }
 const fetchQueue = new AsyncQueue(4);
 const unscrambleQueue = new AsyncQueue(1);
+const contentHashes = new Set();
+const hashQueue = new AsyncQueue(4); 
+
+hashQueue.onStart = () => { if (dom.status.textContent === "Ready" || dom.status.textContent === "Scan done") dom.status.textContent = "Removing duplicates..."; };
+hashQueue.onEmpty = () => { if (dom.status.textContent === "Removing duplicates...") dom.status.textContent = "Ready"; };
+
+async function computeSHA256(blob) {
+    try {
+        const hashBuffer = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+        const hashArray = new Uint8Array(hashBuffer);
+        let hashHex = '';
+        for (let i = 0; i < hashArray.length; i++) hashHex += hashArray[i].toString(16).padStart(2, '0');
+        return hashHex;
+    } catch { return null; }
+}
+
+function queueForHashing(img, item) {
+    if (img.hashChecked || img.filtered || img.sizeFiltered) return;
+    img.hashChecked = true;
+    
+    hashQueue.push(async () => {
+        if (img.sha256) {
+            if (contentHashes.has(img.sha256) && !img.isFirstHashInstance) {
+                img.filtered = true; img.hashFiltered = true; img.selected = false;
+                if (item && item.parentNode) item.parentNode.removeChild(item);
+                debounceUpdateUI();
+            } else { contentHashes.add(img.sha256); img.isFirstHashInstance = true; }
+            return;
+        }
+
+        try {
+            const blob = await getBlobForDownload(img);
+            if (!blob) return;
+            const hash = await computeSHA256(blob);
+            if (!hash) return;
+            img.sha256 = hash;
+            if (contentHashes.has(hash)) {
+                img.filtered = true; img.hashFiltered = true; img.selected = false;
+                if (item && item.parentNode) item.parentNode.removeChild(item);
+                debounceUpdateUI();
+            } else { contentHashes.add(hash); img.isFirstHashInstance = true; }
+        } catch {}
+    });
+}
 
 function updateProgress() {
     if (unscrambleTotal > 0) {
@@ -82,7 +111,6 @@ function saveState(immediate = false) {
     const doSave = () => {
         if (!currentTabId) return;
         idleCallback(() => {
-            // Optimization: Avoid serializing heavy data if not needed, but we must preserve state.
             browser.runtime.sendMessage({
                 type: "SAVE_STATE", tabId: currentTabId,
                 state: { images, pageTitle, scrollPosition: dom.gridContainer.scrollTop, networkMode: fetchMode, tabUrl: currentTabUrl }
@@ -94,11 +122,19 @@ function saveState(immediate = false) {
 window.addEventListener("pagehide", () => saveState(true));
 window.addEventListener("blur", () => saveState(true));
 
-function clearAllCache() { images = []; uidCounter = 0; unscrambleTotal = 0; unscrambleDone = 0; }
+// MASSIVE RAM SAVER: Properly revokes Object URLs before emptying the arrays to avoid memory bleeding
+function clearAllCache() { 
+    for (let i = 0; i < images.length; i++) {
+        if (images[i].unscrambledUrl) URL.revokeObjectURL(images[i].unscrambledUrl);
+        if (images[i].displayUrl && images[i].displayUrl.startsWith('blob:')) URL.revokeObjectURL(images[i].displayUrl);
+    }
+    images = []; uidCounter = 0; unscrambleTotal = 0; unscrambleDone = 0; contentHashes.clear(); renderQueue = []; 
+    dom.grid.innerHTML = "";
+}
 
 function updateSliderTrack(track, minInput, maxInput) {
-    const min = parseInt(minInput.min), max = parseInt(minInput.max);
-    const vMin = parseInt(minInput.value), vMax = parseInt(maxInput.value);
+    const min = parseInt(minInput.min, 10), max = parseInt(minInput.max, 10);
+    const vMin = parseInt(minInput.value, 10), vMax = parseInt(maxInput.value, 10);
     const p1 = Math.max(0, Math.min(100, ((vMin - min) / (max - min)) * 100));
     const p2 = Math.max(0, Math.min(100, ((vMax - min) / (max - min)) * 100));
     track.style.left = p1 + "%"; track.style.width = (p2 - p1) + "%";
@@ -112,13 +148,14 @@ function updateInputStates() {
 }
 
 function filterImages() {
-    const minW = dom.widthCheckMin.checked ? (parseInt(dom.widthInputMin.value) || 0) : 0;
-    const maxW = dom.widthCheckMax.checked ? (parseInt(dom.widthInputMax.value) || 99999) : 99999;
-    const minH = dom.heightCheckMin.checked ? (parseInt(dom.heightInputMin.value) || 0) : 0;
-    const maxH = dom.heightCheckMax.checked ? (parseInt(dom.heightInputMax.value) || 99999) : 99999;
+    const minW = dom.widthCheckMin.checked ? (parseInt(dom.widthInputMin.value, 10) || 0) : 0;
+    const maxW = dom.widthCheckMax.checked ? (parseInt(dom.widthInputMax.value, 10) || 99999) : 99999;
+    const minH = dom.heightCheckMin.checked ? (parseInt(dom.heightInputMin.value, 10) || 0) : 0;
+    const maxH = dom.heightCheckMax.checked ? (parseInt(dom.heightInputMax.value, 10) || 99999) : 99999;
     
     let changed = false;
-    for (const img of images) {
+    for (let i = 0; i < images.length; i++) {
+        const img = images[i];
         if (img.filtered) continue;
         if (img.width !== undefined && img.height !== undefined) {
             const shouldHide = img.width < minW || img.width > maxW || img.height < minH || img.height > maxH;
@@ -138,7 +175,7 @@ function handleSliderInput(e) {
         [dom.widthSliderMin, dom.widthSliderMax, dom.widthInputMin, dom.widthInputMax] : 
         [dom.heightSliderMin, dom.heightSliderMax, dom.heightInputMin, dom.heightInputMax];
     
-    let minVal = parseInt(minS.value), maxVal = parseInt(maxS.value);
+    let minVal = parseInt(minS.value, 10), maxVal = parseInt(maxS.value, 10);
     if (minVal > maxVal) {
         if (e.target === minS) { minS.value = maxVal; minVal = maxVal; } 
         else { maxS.value = minVal; maxVal = minVal; }
@@ -151,10 +188,10 @@ function handleSliderInput(e) {
 function handleManualInput(e) {
     const isW = e.target.id.includes("width");
     const [minS, maxS] = isW ? [dom.widthSliderMin, dom.widthSliderMax] : [dom.heightSliderMin, dom.heightSliderMax];
-    let val = parseInt(e.target.value);
+    let val = parseInt(e.target.value, 10);
     if (isNaN(val)) return;
-    if (e.target.id.includes("Min")) minS.value = Math.min(val, parseInt(maxS.value));
-    else maxS.value = Math.max(val, parseInt(minS.value));
+    if (e.target.id.includes("Min")) minS.value = Math.min(val, parseInt(maxS.value, 10));
+    else maxS.value = Math.max(val, parseInt(minS.value, 10));
     updateSliderTrack(isW ? dom.widthTrack : dom.heightTrack, minS, maxS);
     filterImages();
 }
@@ -254,8 +291,8 @@ function render() {
 
 function performSort() {
     const fragment = document.createDocumentFragment();
-    for (const img of images) {
-        const item = document.getElementById(`item-${img.uid}`);
+    for (let i = 0; i < images.length; i++) {
+        const item = document.getElementById(`item-${images[i].uid}`);
         if (item) fragment.appendChild(item);
     }
     dom.grid.appendChild(fragment);
@@ -266,12 +303,13 @@ function processRenderQueue() {
     if (renderQueue.length === 0) return;
     const fragment = document.createDocumentFragment();
     const batch = renderQueue.splice(0, 60);
-    const minW = dom.widthCheckMin.checked ? (parseInt(dom.widthInputMin.value) || 0) : 0;
-    const maxW = dom.widthCheckMax.checked ? (parseInt(dom.widthInputMax.value) || 99999) : 99999;
-    const minH = dom.heightCheckMin.checked ? (parseInt(dom.heightInputMin.value) || 0) : 0;
-    const maxH = dom.heightCheckMax.checked ? (parseInt(dom.heightInputMax.value) || 99999) : 99999;
+    const minW = dom.widthCheckMin.checked ? (parseInt(dom.widthInputMin.value, 10) || 0) : 0;
+    const maxW = dom.widthCheckMax.checked ? (parseInt(dom.widthInputMax.value, 10) || 99999) : 99999;
+    const minH = dom.heightCheckMin.checked ? (parseInt(dom.heightInputMin.value, 10) || 0) : 0;
+    const maxH = dom.heightCheckMax.checked ? (parseInt(dom.heightInputMax.value, 10) || 99999) : 99999;
 
-    for (const img of batch) {
+    for (let i = 0; i < batch.length; i++) {
+        const img = batch[i];
         if (img.filtered) continue;
         if (!img.uid) img.uid = ++uidCounter;
 
@@ -323,6 +361,8 @@ function processRenderQueue() {
                 dimLabel.className = 'dim-label'; dimLabel.textContent = `${w}x${h}`;
                 item.appendChild(dimLabel);
             }
+            
+            if (!img.filtered && !img.sizeFiltered) queueForHashing(img, item);
         };
         imgEl.onerror = () => fetchQueue.push(() => handleImageError(img, item, imgEl));
         item.appendChild(imgEl);
@@ -344,7 +384,7 @@ function createImageIdentifier(url) {
 }
 
 async function handleImageError(img, itemEl, imgEl) {
-    let stage = parseInt(imgEl.dataset.retryStage || "0");
+    let stage = parseInt(imgEl.dataset.retryStage || "0", 10);
     if (stage >= 2) { if (itemEl) { itemEl.style.opacity = '0.5'; itemEl.style.pointerEvents = 'none'; } return; }
     if (img.url.startsWith('blob:') && stage === 0) stage = 1; 
 
@@ -361,7 +401,8 @@ async function handleImageError(img, itemEl, imgEl) {
 }
 
 async function convertEssentialImages() {
-    for (const img of images) {
+    for (let i = 0; i < images.length; i++) {
+        const img = images[i];
         if (img.url.startsWith('blob:') && !img.displayUrl.startsWith('data:')) {
             const item = document.getElementById(`item-${img.uid}`);
             if(item) fetchQueue.push(() => handleImageError(img, item, item.querySelector('img')));
@@ -373,11 +414,11 @@ async function setNetworkMode(mode) {
     if (currentTabId) await browser.runtime.sendMessage({ type: "SET_NETWORK_MODE", tabId: currentTabId, networkMode: mode }).catch(()=>{});
 }
 
-async function checkUrlChange() {
+async function checkTabOrUrlChange() {
     if (!currentTabId) return false;
     try {
         const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-        return tab && tab.url !== currentTabUrl;
+        return tab && (tab.id !== currentTabId || tab.url !== currentTabUrl);
     } catch { return false; }
 }
 
@@ -393,7 +434,8 @@ async function init() {
         browser.runtime.onMessage.addListener((msg) => {
             if (msg.type === "CANVAS_MAP_PUSH" && msg.map) {
                 Object.assign(unscrambleMap, msg.map);
-                for (const img of images) {
+                for (let i = 0; i < images.length; i++) {
+                    const img = images[i];
                     if (!img.unscrambledUrl && !img.queuedForUnscramble) {
                         const canonical = getCanonicalUrl(img.url);
                         const data = unscrambleMap[img.url] || unscrambleMap[canonical] || unscrambleMap[img.url.split('?')[0]] || unscrambleMap[decodeURIComponent(img.url)];
@@ -411,14 +453,21 @@ async function init() {
             if (saved?.state?.networkMode !== undefined) { fetchMode = saved.state.networkMode; updateNetworkModeUI(); await setNetworkMode(fetchMode); }
             const urlChanged = saved?.state?.tabUrl && saved.state.tabUrl !== currentTabUrl;
             if (urlChanged) {
-                clearAllCache(); await browser.runtime.sendMessage({ type: "CLEAR_TAB_STATE", tabId: currentTabId });
+                clearAllCache(); await browser.runtime.sendMessage({ type: "CLEAR_TAB_STATE", tabId: currentTabId }).catch(()=>{});
             } else if (saved?.state) {
                 if (saved.state.images?.length && !urlChanged) {
                     images = saved.state.images;
                     let maxUid = 0;
-                    for(const i of images) {
-                         if(!i.uid) i.uid = ++uidCounter; else if(i.uid > uidCounter) maxUid = i.uid;
-                         if (!i.unscrambledUrl) i.queuedForUnscramble = false;
+                    for (let i = 0; i < images.length; i++) {
+                         const imgObj = images[i];
+                         if(!imgObj.uid) imgObj.uid = ++uidCounter; else if(imgObj.uid > uidCounter) maxUid = imgObj.uid;
+                         if (!imgObj.unscrambledUrl) imgObj.queuedForUnscramble = false;
+                         
+                         if (imgObj.sha256 && !imgObj.filtered && !imgObj.hashFiltered) {
+                             if (contentHashes.has(imgObj.sha256)) {
+                                 imgObj.filtered = true; imgObj.hashFiltered = true; imgObj.selected = false;
+                             } else { contentHashes.add(imgObj.sha256); imgObj.isFirstHashInstance = true; imgObj.hashChecked = true; }
+                         } else imgObj.hashChecked = false;
                     }
                     uidCounter = Math.max(uidCounter, maxUid);
                     images.sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
@@ -441,65 +490,72 @@ async function init() {
             const blobRes = await browser.tabs.sendMessage(currentTabId, { type: "SCAN_BLOBS" }).catch(()=>({}));
             addFoundImages(blobRes?.urls || []);
         } else {
-            const [p, c, n] = await Promise.all([
+            const [p, c, n, b] = await Promise.all([
                 browser.tabs.sendMessage(currentTabId, { type: "SCAN_PAGE_ORDERED" }).catch(()=>({})),
                 browser.tabs.sendMessage(currentTabId, { type: "SCAN_CANVAS" }).catch(()=>({})),
-                browser.runtime.sendMessage({ type: "GET_NETWORK_IMAGES", tabId: currentTabId }).catch(()=>({}))
+                browser.runtime.sendMessage({ type: "GET_NETWORK_IMAGES", tabId: currentTabId }).catch(()=>({})),
+                browser.tabs.sendMessage(currentTabId, { type: "SCAN_BLOBS" }).catch(()=>({}))
             ]);
             if (p?.title) pageTitle = p.title;
             const pItems = p?.items || (p?.urls || []).map(u => ({url: u}));
             const cItems = (c?.urls||[]).map(u => ({url: u}));
             const nItems = (n?.images||[]).map(u => ({url: u}));
-            addFoundImages([...pItems, ...cItems, ...nItems]);
+            const bItems = (b?.urls||[]).map(u => ({url: u}));
+            addFoundImages([...pItems, ...cItems, ...nItems, ...bItems]);
         }
     } catch { dom.status.textContent = "Refresh page needed"; }
 }
 init().then(startAutoReload);
 
 function updateUI(shouldSave = true) {
-    const valid = images.filter(i => !i.filtered && !i.sizeFiltered);
-    const sel = valid.filter(i => i.selected).length;
-    dom.tracker.textContent = valid.length === 0 ? "No images" : `${sel} / ${valid.length}`;
-    dom.toggleBtn.textContent = valid.some(i => !i.selected) ? "Select All" : "Deselect All";
-    dom.downloadBtn.disabled = dom.zipBtn.disabled = sel === 0;
+    let validCount = 0, selCount = 0;
+    for (let i = 0; i < images.length; i++) {
+        if (!images[i].filtered && !images[i].sizeFiltered) {
+            validCount++;
+            if (images[i].selected) selCount++;
+        }
+    }
+    dom.tracker.textContent = validCount === 0 ? "No images" : `${selCount} / ${validCount}`;
+    dom.toggleBtn.textContent = (selCount < validCount) ? "Select All" : "Deselect All";
+    dom.downloadBtn.disabled = dom.zipBtn.disabled = selCount === 0;
     if (shouldSave) saveState();
 }
 
 function updateNetworkModeUI() {
     dom.networkToggle.classList.remove('network-active', 'blob-active');
-    dom.modeDefault.checked = false;
-    dom.modeNetwork.checked = false;
-    dom.modeBlob.checked = false;
+    dom.modeDefault.checked = false; dom.modeNetwork.checked = false; dom.modeBlob.checked = false;
     
     if (fetchMode === 'network') {
-        dom.networkToggle.textContent = "Network";
-        dom.networkToggle.classList.add('network-active');
-        dom.modeNetwork.checked = true;
+        dom.networkToggle.textContent = "Network"; dom.networkToggle.classList.add('network-active'); dom.modeNetwork.checked = true;
     } else if (fetchMode === 'blob') {
-        dom.networkToggle.textContent = "Scrapper";
-        dom.networkToggle.classList.add('blob-active');
-        dom.modeBlob.checked = true;
+        dom.networkToggle.textContent = "Scrapper"; dom.networkToggle.classList.add('blob-active'); dom.modeBlob.checked = true;
     } else {
-        dom.networkToggle.textContent = "Default";
-        dom.modeDefault.checked = true;
+        dom.networkToggle.textContent = "Default"; dom.modeDefault.checked = true;
     }
 }
 
 dom.grid.addEventListener('click', (e) => {
     const item = e.target.closest('.item');
     if (!item) return;
-    const img = images.find(i => i.uid === parseInt(item.dataset.uid));
+    const uid = parseInt(item.dataset.uid, 10);
+    const img = images.find(i => i.uid === uid);
     if (img) { img.selected = !img.selected; item.classList.toggle('selected', img.selected); debounceUpdateUI(); saveState(); }
 });
 
 dom.toggleBtn.onclick = () => {
-    const valid = images.filter(i => !i.filtered && !i.sizeFiltered);
-    if (!valid.length) return;
-    const target = valid.some(i => !i.selected);
-    for (const i of valid) {
-        i.selected = target;
-        const item = document.getElementById(`item-${i.uid}`);
-        if(item) item.classList.toggle('selected', target);
+    let targetState = true;
+    for (let i = 0; i < images.length; i++) {
+        if (!images[i].filtered && !images[i].sizeFiltered && !images[i].selected) { targetState = true; break; }
+        if (i === images.length - 1) targetState = false;
+    }
+    
+    for (let i = 0; i < images.length; i++) {
+        const img = images[i];
+        if (!img.filtered && !img.sizeFiltered) {
+            img.selected = targetState;
+            const item = document.getElementById(`item-${img.uid}`);
+            if(item) item.classList.toggle('selected', targetState);
+        }
     }
     updateUI(true);
 };
@@ -510,10 +566,8 @@ dom.renameToggle.onclick = () => {
 
 async function switchMode(newMode) {
     if (fetchMode === newMode) return;
-    images = []; 
-    uidCounter = 0; 
-    unscrambleTotal = 0; 
-    unscrambleDone = 0;
+    clearAllCache();
+    await browser.runtime.sendMessage({ type: "CLEAR_TAB_STATE", tabId: currentTabId }).catch(()=>{});
     render();
     fetchMode = newMode;
     updateNetworkModeUI();
@@ -526,43 +580,27 @@ dom.modeDefault.onclick = () => switchMode('default');
 dom.modeNetwork.onclick = () => switchMode('network');
 dom.modeBlob.onclick = () => switchMode('blob');
 
-dom.refreshBtn.onclick = async () => {
-    clearAllCache();
-    await browser.runtime.sendMessage({ type: "CLEAR_TAB_STATE", tabId: currentTabId });
-    saveState(true);
-    dom.status.textContent = "Refreshing...";
-    await init();
-};
-
 dom.sortBtn.onclick = () => {
-    if (!sortOrder) { sortOrder = 'name'; dom.sortBtn.textContent = "Name"; }
+    if (!sortOrder) { sortOrder = 'reverse'; dom.sortBtn.textContent = "Reverse"; }
+    else if (sortOrder === 'reverse') { sortOrder = 'name'; dom.sortBtn.textContent = "Name"; }
     else if (sortOrder === 'name') { sortOrder = 'asc'; dom.sortBtn.textContent = "Asc ↓"; }
     else if (sortOrder === 'asc') { sortOrder = 'desc'; dom.sortBtn.textContent = "Dsc ↑"; }
     else { sortOrder = null; dom.sortBtn.textContent = "Sort ⇅"; }
     
     setTimeout(() => {
-        if (sortOrder === 'name') {
+        if (sortOrder === 'reverse') images.sort((a,b) => (b.sortOrder||0) - (a.sortOrder||0));
+        else if (sortOrder === 'name') {
             images.sort((a,b) => {
                 const getBase = (n) => { const d = n.lastIndexOf('.'); return d !== -1 ? n.substring(0, d) : n; };
                 const nameA = a._name, nameB = b._name;
                 const baseA = getBase(nameA), baseB = getBase(nameB);
-                const numA = parseInt(baseA.match(/\d+$/)?.[0] || '0'), numB = parseInt(baseB.match(/\d+$/)?.[0] || '0');
+                const numA = parseInt(baseA.match(/\d+$/)?.[0] || '0', 10), numB = parseInt(baseB.match(/\d+$/)?.[0] || '0', 10);
                 if (numA && numB && numA !== numB) return numA - numB;
                 return nameA.localeCompare(nameB);
             });
         }
-        else if (sortOrder === 'asc') {
-            images.sort((a,b) => {
-                const diff = (a.pixelCount||0) - (b.pixelCount||0);
-                return diff !== 0 ? diff : (a.sortOrder||0) - (b.sortOrder||0);
-            });
-        }
-        else if (sortOrder === 'desc') {
-            images.sort((a,b) => {
-                const diff = (b.pixelCount||0) - (a.pixelCount||0);
-                return diff !== 0 ? diff : (a.sortOrder||0) - (b.sortOrder||0);
-            });
-        }
+        else if (sortOrder === 'asc') images.sort((a,b) => { const diff = (a.pixelCount||0) - (b.pixelCount||0); return diff !== 0 ? diff : (a.sortOrder||0) - (b.sortOrder||0); });
+        else if (sortOrder === 'desc') images.sort((a,b) => { const diff = (b.pixelCount||0) - (a.pixelCount||0); return diff !== 0 ? diff : (a.sortOrder||0) - (b.sortOrder||0); });
         else images.sort((a,b) => (a.sortOrder||0) - (b.sortOrder||0));
         performSort();
     }, 10);
@@ -573,10 +611,10 @@ dom.clearCache.onclick = async () => {
     if (confirm) {
         clearAllCache();
         await browser.runtime.sendMessage({ type: "CLEAR_TAB_STATE", tabId: currentTabId });
-        render(); 
-        saveState(true); 
-        dom.status.textContent = "Cache cleared"; 
-        setTimeout(() => dom.status.textContent = "Ready", 2000); 
+        render();
+        saveState(true);
+        dom.status.textContent = "Scanning...";
+        await init();
     }
 };
 
@@ -597,10 +635,7 @@ function addFoundImages(items) {
             images.push({ 
                 url, displayUrl: url, selected: true, 
                 originalIndex: images.length + 1, sortOrder: startOrder + idx, 
-                uid: ++uidCounter,
-                _name: extractFilename(url),
-                _ext: extractExtension(url),
-                width: w, height: h
+                uid: ++uidCounter, _name: extractFilename(url), _ext: extractExtension(url), width: w, height: h
             }); 
             currentIds.add(id); added++; 
         }
@@ -613,9 +648,11 @@ function addFoundImages(items) {
 async function startAutoReload() {
     const loop = async () => {
         if (!currentTabId) return;
-        if (await checkUrlChange()) {
-            clearAllCache(); const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-            currentTabUrl = tab.url; await browser.runtime.sendMessage({ type: "CLEAR_TAB_STATE", tabId: currentTabId });
+        if (await checkTabOrUrlChange()) {
+            clearAllCache(); 
+            const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+            if (tab) { currentTabId = tab.id; currentTabUrl = tab.url; }
+            await browser.runtime.sendMessage({ type: "CLEAR_TAB_STATE", tabId: currentTabId }).catch(()=>{});
             await init(); setTimeout(loop, 3500); return;
         }
         try {
@@ -627,15 +664,17 @@ async function startAutoReload() {
                 const blobRes = await browser.tabs.sendMessage(currentTabId, { type: "SCAN_BLOBS" }).catch(()=>({}));
                 addFoundImages((blobRes?.urls || []).map(u=>({url:u})));
             } else {
-                const [p, c, n] = await Promise.all([
+                const [p, c, n, b] = await Promise.all([
                     browser.tabs.sendMessage(currentTabId, { type: "SCAN_PAGE_ORDERED" }).catch(()=>({})),
                     browser.tabs.sendMessage(currentTabId, { type: "SCAN_CANVAS" }).catch(()=>({})),
-                    browser.runtime.sendMessage({ type: "GET_NETWORK_IMAGES", tabId: currentTabId }).catch(()=>({}))
+                    browser.runtime.sendMessage({ type: "GET_NETWORK_IMAGES", tabId: currentTabId }).catch(()=>({})),
+                    browser.tabs.sendMessage(currentTabId, { type: "SCAN_BLOBS" }).catch(()=>({}))
                 ]);
                 const pItems = p?.items || (p?.urls || []).map(u => ({url: u}));
                 const cItems = (c?.urls||[]).map(u => ({url: u}));
                 const nItems = (n?.images||[]).map(u => ({url: u}));
-                addFoundImages([...pItems, ...cItems, ...nItems]);
+                const bItems = (b?.urls||[]).map(u => ({url: u}));
+                addFoundImages([...pItems, ...cItems, ...nItems, ...bItems]);
             }
         } catch {}
         setTimeout(loop, 3500);
