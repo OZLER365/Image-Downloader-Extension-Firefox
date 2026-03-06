@@ -77,3 +77,7 @@ footer { background:var(--bg-color); border-top:1px solid var(--border); padding
 .btn.secondary.blob-active:hover:not(:disabled) { background:var(--blob-active-hover); border-color:var(--blob-active-hover); }
 html.android body { width:100vw; height:100vh; }
 html.android #grid { grid-template-columns:repeat(2,1fr); }
+
+/* Added Stop Button Styles */
+.btn.danger { background: #ef4444; color: #fff; border-color: #ef4444; }
+.btn.danger:hover:not(:disabled) { background: #dc2626; border-color: #dc2626; }

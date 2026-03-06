@@ -1,10 +1,6 @@
-(function() {
-    // Injected hook optimized to avoid unnecessary string manipulation on heavily scrambled pages
-    const injectScript = document.createElement('script');
-    injectScript.textContent = `(function(){const c={};const o=CanvasRenderingContext2D.prototype.drawImage;let t=null;const b=[],h=new Set(),bc={};let bh=false;async function hb(l){const u=await l.arrayBuffer(),d=await crypto.subtle.digest('SHA-256',u);const arr=new Uint8Array(d);let str='';for(let i=0;i<arr.length;i++)str+=arr[i].toString(16).padStart(2,'0');return str;}const ou=URL.createObjectURL;URL.createObjectURL=function(l){const u=ou.apply(this,arguments);if(bh&&(l instanceof Blob)&&l.type.startsWith('image/')){bc[u]=l;hb(l).then(x=>{if(!h.has(x)){h.add(x);b.push(u)}})}return u};function gc(u){if(!u||typeof u!=='string'||u.startsWith('data:')||u.startsWith('blob:'))return u;try{const x=new URL(u,document.baseURI);if(/\\.(jpg|jpeg|png|webp|gif|svg|bmp|tiff)($|\\?)/i.test(x.pathname))return x.origin+x.pathname;return x.href}catch{return u}}function nt(){if(t)clearTimeout(t);t=setTimeout(()=>window.postMessage({type:"CANVAS_MAP_AUTO_UPDATE",data:c},"*"),300)}CanvasRenderingContext2D.prototype.drawImage=function(i,...a){const r=o.apply(this,[i,...a]);try{if(this._isInternal)return r;const s=i.src;if(!s||s.startsWith("data:"))return r;const u=gc(s);let e=c[u]||c[s];if(!e){e={width:0,height:0,instructions:[]};c[u]=e;c[s]=e;}let p=null;if(a.length===2)p={sx:0,sy:0,sw:i.width,sh:i.height,dx:a[0],dy:a[1],dw:i.width,dh:i.height};else if(a.length===4)p={sx:0,sy:0,sw:i.width,sh:i.height,dx:a[0],dy:a[1],dw:a[2],dh:a[3]};else if(a.length===8)p={sx:a[0],sy:a[1],sw:a[2],sh:a[3],dx:a[4],dy:a[5],dw:a[6],dh:a[7]};if(p&&p.dw>0&&p.dh>0){e.width=Math.max(e.width,p.dx+p.dw);e.height=Math.max(e.height,p.dy+p.dh);e.instructions.push(p);nt()}}catch{}return r};window.addEventListener("message",e=>{if(!e.data)return;if(e.data==="REQUEST_CANVAS_MAP")nt();if(e.data==="ENABLE_BLOB_HOOK")bh=true;if(e.data==="REQUEST_BLOB_URLS")window.postMessage({type:"BLOB_URLS_RESPONSE",urls:b},"*");if(e.data.type==="PAGE_CONVERT_BLOB"){const u=e.data.url,cb=bc[u],cv=b=>{const r=new FileReader();r.onloadend=()=>window.postMessage({type:"PAGE_BLOB_CONVERTED",url:u,dataUrl:r.result},"*");r.readAsDataURL(b)};if(cb)cv(cb);else fetch(u).then(r=>r.blob()).then(b=>cv(b)).catch(()=>window.postMessage({type:"PAGE_BLOB_CONVERTED",url:u,error:true},"*"))}})})()`;
-    (document.head || document.documentElement).appendChild(injectScript);
-    injectScript.remove();
+globalThis.browser = chrome;
 
+(function() {
     let canvasMapCache = {};
     window.addEventListener("message", (e) => {
         if (e.data && (e.data.type === "CANVAS_MAP_AUTO_UPDATE" || e.data.type === "CANVAS_MAP_RESPONSE")) {
@@ -49,13 +45,11 @@
     }
 
     function observeImgElement(img) {
-        if (img._isObserved) return; 
+        if (img._isObserved) return;
         img._isObserved = true;
-        
         const currentSrc = img.currentSrc || img.src;
         if (currentSrc) trackDomImage(normalizeDomUrl(currentSrc));
-
-        img.addEventListener('load', function onLoad() {
+        img.addEventListener('load', function() {
             const loaded = img.currentSrc || img.src;
             if (loaded) trackDomImage(normalizeDomUrl(loaded));
         }, { passive: true });
@@ -64,41 +58,32 @@
     function startDomImageObserver() {
         if (domObserverActive) return;
         domObserverActive = true;
-
         document.querySelectorAll('img').forEach(observeImgElement);
-
-        // LAG REDUCTION: getElementsByTagName is ~10x faster natively than querySelectorAll, skipping heavy DOM pauses
         const mo = new MutationObserver((mutations) => {
-            for (let i = 0; i < mutations.length; i++) {
-                const mut = mutations[i];
+            for (const mut of mutations) {
                 if (mut.type === 'childList') {
-                    mut.addedNodes.forEach(node => {
-                        if (node.nodeType !== 1) return;
+                    for (const node of mut.addedNodes) {
+                        if (node.nodeType !== 1) continue;
                         if (node.tagName === 'IMG') observeImgElement(node);
                         else {
                             const imgs = node.getElementsByTagName('img');
                             for (let j = 0; j < imgs.length; j++) observeImgElement(imgs[j]);
                         }
-                    });
+                    }
                 } else if (mut.type === 'attributes' && mut.target.tagName === 'IMG') {
-                    const img = mut.target;
-                    const src = img.currentSrc || img.src || img.getAttribute('src');
+                    const src = mut.target.currentSrc || mut.target.src || mut.target.getAttribute('src');
                     if (src) trackDomImage(normalizeDomUrl(src));
                 }
             }
         });
-
         mo.observe(document.documentElement, {
-            childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'srcset', 'data-src', 'data-original', 'data-lazy']
+            childList: true, subtree: true, attributes: true,
+            attributeFilter: ['src', 'srcset', 'data-src', 'data-original', 'data-lazy']
         });
     }
 
-    browser.runtime.onMessage.addListener((msg) => {
-        if (msg.type === "START_DOM_OBSERVER") startDomImageObserver();
-    });
-
     const CONFIG = { minSize: 50 };
-    
+
     async function convertToBase64(url) {
         return new Promise((resolve) => {
             const img = new Image();
@@ -124,7 +109,6 @@
         return !(width > 0 && height > 0 && width < CONFIG.minSize && height < CONFIG.minSize);
     }
 
-    // REFLOW REDUCTION: Minimized property checks here directly limits site slow-downs
     function scanPageOrdered() {
         const seen = new Set(), locationHref = window.location.href;
         const elements = document.querySelectorAll('img,div,span,a,section,header,main,article,li,figure');
@@ -139,26 +123,22 @@
                     if (src) candidates.push({ url: src, w: el.naturalWidth, h: el.naturalHeight });
                 });
             } else if (el.offsetWidth > 0 || el.offsetHeight > 0) {
-                const style = window.getComputedStyle(el);
-                const bg = style.getPropertyValue('background-image');
+                const bg = window.getComputedStyle(el).getPropertyValue('background-image');
                 if (bg && bg.startsWith('url(')) {
                     let match;
-                    while ((match = bgRegex.exec(bg)) !== null) {
-                        candidates.push({ url: match[1], w: 0, h: 0 });
-                    }
-                    bgRegex.lastIndex = 0; 
+                    bgRegex.lastIndex = 0;
+                    while ((match = bgRegex.exec(bg)) !== null) candidates.push({ url: match[1], w: 0, h: 0 });
                 }
             }
             let best = null;
             for (let j = 0; j < candidates.length; j++) {
-                let item = candidates[j];
-                let src = item.url;
+                let src = candidates[j].url;
                 if (!src || src === locationHref) continue;
                 if (!src.startsWith('http') && !src.startsWith('blob:') && !src.startsWith('data:')) {
                     try { src = new URL(src, locationHref).href; } catch { continue; }
                 }
                 const score = src.startsWith('http') ? 3 : src.startsWith('blob:') ? 2 : 1;
-                if (!best || score > best.score) best = { src, w: item.w, h: item.h, score };
+                if (!best || score > best.score) best = { src, w: candidates[j].w, h: candidates[j].h, score };
             }
             if (best && !seen.has(best.src) && isValidImage(best.src, best.w, best.h)) {
                 seen.add(best.src);
@@ -175,14 +155,19 @@
         return [...imageData.sort(sortFn), ...smallImageData.sort(sortFn)].map(item => ({ url: item.url, w: item.w, h: item.h }));
     }
 
+    // Merged into a single listener for efficiency
     browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-        if (msg.type === "SCAN_PAGE_ORDERED") sendResponse({ items: scanPageOrdered(), title: document.title });
-        else if (msg.type === "SCAN_CANVAS") {
-            const res = [];
-            document.querySelectorAll('canvas').forEach(c => { if(c.width > 50) try{res.push(c.toDataURL())}catch{} });
-            sendResponse({ urls: res });
+        if (msg.type === "START_DOM_OBSERVER") {
+            startDomImageObserver();
+            return;
         }
-        else if (msg.type === "SCAN_BLOBS") {
+        if (msg.type === "SCAN_PAGE_ORDERED") {
+            sendResponse({ items: scanPageOrdered(), title: document.title });
+        } else if (msg.type === "SCAN_CANVAS") {
+            const res = [];
+            document.querySelectorAll('canvas').forEach(c => { if (c.width > 50) try { res.push(c.toDataURL()); } catch {} });
+            sendResponse({ urls: res });
+        } else if (msg.type === "SCAN_BLOBS") {
             const listener = (e) => {
                 if (e.data && e.data.type === "BLOB_URLS_RESPONSE") {
                     window.removeEventListener("message", listener);
@@ -192,8 +177,7 @@
             window.addEventListener("message", listener);
             window.postMessage("REQUEST_BLOB_URLS", "*");
             return true;
-        }
-        else if (msg.type === "CONVERT_IMAGE") {
+        } else if (msg.type === "CONVERT_IMAGE") {
             if (msg.url.startsWith('blob:')) {
                 const listener = (e) => {
                     if (e.data && e.data.type === "PAGE_BLOB_CONVERTED" && e.data.url === msg.url) {
@@ -203,13 +187,44 @@
                 };
                 window.addEventListener("message", listener);
                 window.postMessage({ type: "PAGE_CONVERT_BLOB", url: msg.url }, "*");
-                return true; 
+                return true;
             } else {
                 convertToBase64(msg.url).then(dataUrl => sendResponse({ dataUrl }));
                 return true;
             }
-        }
-        else if (msg.type === "GET_UNSCRAMBLE_DATA") {
+        } else if (msg.type === "FETCH_AND_CONVERT") {
+            fetch(msg.url).then(r => r.blob()).then(blob => {
+                const reader = new FileReader();
+                reader.onloadend = () => sendResponse({ dataUrl: reader.result });
+                reader.onerror = () => sendResponse({ dataUrl: null });
+                reader.readAsDataURL(blob);
+            }).catch(() => sendResponse({ dataUrl: null }));
+            return true;
+        } else if (msg.type === "EXECUTE_ANDROID_DOWNLOAD") {
+            const execute = async () => {
+                let urlToDownload = msg.dataUrl;
+                let revoke = false;
+                if (!urlToDownload.startsWith('data:')) {
+                    try {
+                        const blob = await fetch(urlToDownload).then(r => r.blob());
+                        urlToDownload = URL.createObjectURL(blob);
+                        revoke = true;
+                    } catch { return; }
+                }
+                const a = document.createElement('a');
+                a.href = urlToDownload;
+                a.download = msg.filename;
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                a.click();
+                await new Promise(r => setTimeout(r, 500));
+                document.body.removeChild(a);
+                if (revoke) URL.revokeObjectURL(urlToDownload);
+            };
+            execute();
+            sendResponse({ success: true });
+            return true;
+        } else if (msg.type === "GET_UNSCRAMBLE_DATA") {
             window.postMessage("REQUEST_CANVAS_MAP", "*");
             sendResponse({ map: canvasMapCache });
         }
