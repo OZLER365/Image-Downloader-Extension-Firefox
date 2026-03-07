@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Universal Image Downloader",
-  "version": "15.9",
+  "version": "16.0",
   "permissions": [
     "activeTab",
     "tabs",
@@ -19,6 +19,7 @@
   },
   "background": {
     "scripts": [
+      "jszip.min.js",
       "background.js"
     ],
     "persistent": true
