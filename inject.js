@@ -60,6 +60,10 @@
                 c[u] = e;
                 c[s] = e;
             }
+            // Mark this canvas so the toDataURL() scan in content.js skips it in default mode.
+            // Its source image is already captured via the drawImage intercept pipeline;
+            // canvas.toDataURL() re-encodes as JPEG producing a different hash that bypasses dedup.
+            if (!this.canvas.dataset.uidIntercepted) this.canvas.dataset.uidIntercepted = '1';
             let p = null;
             if (a.length === 2) p = { sx: 0, sy: 0, sw: i.width, sh: i.height, dx: a[0], dy: a[1], dw: i.width, dh: i.height };
             else if (a.length === 4) p = { sx: 0, sy: 0, sw: i.width, sh: i.height, dx: a[0], dy: a[1], dw: a[2], dh: a[3] };
