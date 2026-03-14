@@ -165,7 +165,15 @@ globalThis.browser = chrome;
             sendResponse({ items: scanPageOrdered(), title: document.title });
         } else if (msg.type === "SCAN_CANVAS") {
             const res = [];
-            document.querySelectorAll('canvas').forEach(c => { if (c.width > 50) try { res.push(c.toDataURL()); } catch {} });
+            document.querySelectorAll('canvas').forEach(c => {
+                if (c.width > 50) {
+                    // Default mode only: skip canvases whose source images are already captured
+                    // via the drawImage intercept pipeline. canvas.toDataURL() re-encodes the
+                    // image producing a different SHA-256 hash that bypasses the dedup check.
+                    if (msg.mode === 'default' && c.dataset.uidIntercepted) return;
+                    try { res.push(c.toDataURL()); } catch {}
+                }
+            });
             sendResponse({ urls: res });
         } else if (msg.type === "SCAN_BLOBS") {
             const listener = (e) => {
