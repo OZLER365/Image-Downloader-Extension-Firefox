@@ -575,7 +575,7 @@ async function init() {
         } else {
             const [p, c, n, b] = await Promise.all([
                 browser.tabs.sendMessage(currentTabId, { type: "SCAN_PAGE_ORDERED" }).catch(() => ({})),
-                browser.tabs.sendMessage(currentTabId, { type: "SCAN_CANVAS" }).catch(() => ({})),
+                browser.tabs.sendMessage(currentTabId, { type: "SCAN_CANVAS", mode: fetchMode }).catch(() => ({})),
                 browser.runtime.sendMessage({ type: "GET_NETWORK_IMAGES", tabId: currentTabId }).catch(() => ({})),
                 browser.tabs.sendMessage(currentTabId, { type: "SCAN_BLOBS" }).catch(() => ({}))
             ]);
@@ -756,7 +756,7 @@ async function startAutoReload() {
             } else {
                 const [p, c, n, b] = await Promise.all([
                     browser.tabs.sendMessage(currentTabId, { type: "SCAN_PAGE_ORDERED" }).catch(() => ({})),
-                    browser.tabs.sendMessage(currentTabId, { type: "SCAN_CANVAS" }).catch(() => ({})),
+                    browser.tabs.sendMessage(currentTabId, { type: "SCAN_CANVAS", mode: fetchMode }).catch(() => ({})),
                     browser.runtime.sendMessage({ type: "GET_NETWORK_IMAGES", tabId: currentTabId }).catch(() => ({})),
                     browser.tabs.sendMessage(currentTabId, { type: "SCAN_BLOBS" }).catch(() => ({}))
                 ]);
