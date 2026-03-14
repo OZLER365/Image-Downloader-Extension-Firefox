@@ -252,7 +252,7 @@ async function init() {
         if (fetchMode === 'network') { addFoundImages((await browser.runtime.sendMessage({ type: "GET_NETWORK_IMAGES", tabId: currentTabId }).catch(()=>{}))?.images || []); }
         else if (fetchMode === 'blob') { addFoundImages((await browser.tabs.sendMessage(currentTabId, { type: "SCAN_BLOBS" }).catch(()=>{}))?.urls || []); }
         else {
-            const [p, c, n, b] = await Promise.all([browser.tabs.sendMessage(currentTabId, { type: "SCAN_PAGE_ORDERED" }).catch(()=>({})), browser.tabs.sendMessage(currentTabId, { type: "SCAN_CANVAS" }).catch(()=>({})), browser.runtime.sendMessage({ type: "GET_NETWORK_IMAGES", tabId: currentTabId }).catch(()=>({})), browser.tabs.sendMessage(currentTabId, { type: "SCAN_BLOBS" }).catch(()=>({}))]);
+            const [p, c, n, b] = await Promise.all([browser.tabs.sendMessage(currentTabId, { type: "SCAN_PAGE_ORDERED" }).catch(()=>({})), browser.tabs.sendMessage(currentTabId, { type: "SCAN_CANVAS", mode: fetchMode }).catch(()=>({})), browser.runtime.sendMessage({ type: "GET_NETWORK_IMAGES", tabId: currentTabId }).catch(()=>({})), browser.tabs.sendMessage(currentTabId, { type: "SCAN_BLOBS" }).catch(()=>({}))]);
             if (p?.title) pageTitle = p.title;
             addFoundImages([...(p?.items || (p?.urls || []).map(url => ({url}))), ...(c?.urls||[]).map(url => ({url})), ...(n?.images||[]).map(url => ({url})), ...(b?.urls||[]).map(url => ({url}))]);
         }
@@ -338,7 +338,7 @@ async function startAutoReload() {
             if (fetchMode === 'network') { addFoundImages(((await browser.runtime.sendMessage({ type: "GET_NETWORK_IMAGES", tabId: currentTabId }).catch(()=>{}))?.images || []).map(url=>({url}))); }
             else if (fetchMode === 'blob') { addFoundImages(((await browser.tabs.sendMessage(currentTabId, { type: "SCAN_BLOBS" }).catch(()=>{}))?.urls || []).map(url=>({url}))); }
             else {
-                const [p, c, n, b] = await Promise.all([browser.tabs.sendMessage(currentTabId, { type: "SCAN_PAGE_ORDERED" }).catch(()=>({})), browser.tabs.sendMessage(currentTabId, { type: "SCAN_CANVAS" }).catch(()=>({})), browser.runtime.sendMessage({ type: "GET_NETWORK_IMAGES", tabId: currentTabId }).catch(()=>({})), browser.tabs.sendMessage(currentTabId, { type: "SCAN_BLOBS" }).catch(()=>({}))]);
+                const [p, c, n, b] = await Promise.all([browser.tabs.sendMessage(currentTabId, { type: "SCAN_PAGE_ORDERED" }).catch(()=>({})), browser.tabs.sendMessage(currentTabId, { type: "SCAN_CANVAS", mode: fetchMode }).catch(()=>({})), browser.runtime.sendMessage({ type: "GET_NETWORK_IMAGES", tabId: currentTabId }).catch(()=>({})), browser.tabs.sendMessage(currentTabId, { type: "SCAN_BLOBS" }).catch(()=>({}))]);
                 addFoundImages([...(p?.items || (p?.urls || []).map(url=>({url}))), ...(c?.urls||[]).map(url=>({url})), ...(n?.images||[]).map(url=>({url})), ...(b?.urls||[]).map(url=>({url}))]);
             }
         } catch {} setTimeout(loop, 3500);
